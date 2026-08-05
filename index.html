@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rufnummern sperren</title>
+<style>
+  :root {
+    --accent: #bd0010;
+    --border: #d7dce3;
+    --bg: #f7f8fa;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --ok: #1a7f37;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+  }
+  #app { max-width: 720px; margin: 0 auto; padding: 22px 20px 40px; }
+  h1 { font-size: 17px; margin: 0 0 14px; }
+  h2 { font-size: 15px; margin: 26px 0 10px; }
+
+  .card {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px;
+  }
+
+  .field { margin-bottom: 12px; }
+  .field:last-of-type { margin-bottom: 16px; }
+  .field label {
+    display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px;
+  }
+  .field input {
+    width: 100%; padding: 10px 12px; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  .field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  button {
+    font-family: inherit; cursor: pointer;
+  }
+  #block-btn {
+    padding: 10px 18px; border: none; border-radius: 6px;
+    background: var(--accent); color: #fff; font-size: 14px;
+  }
+  #block-btn:disabled { opacity: 0.6; cursor: default; }
+
+  #message { font-size: 13px; margin-top: 12px; }
+  #message.error { color: var(--accent); }
+  #message.success { color: var(--ok); }
+
+  .list-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin: 26px 0 10px;
+  }
+  .list-head h2 { margin: 0; }
+  #reload-btn {
+    border: none; background: none; padding: 0;
+    font-size: 13px; color: var(--accent); text-decoration: underline;
+  }
+  #reload-btn:disabled { color: var(--muted); cursor: default; }
+
+  #list { display: flex; flex-direction: column; gap: 8px; }
+  .entry {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 11px 14px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .entry .info { flex: 1; min-width: 0; }
+  .entry .number {
+    font-size: 14px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .entry .name {
+    font-size: 12.5px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .entry button {
+    flex: none; padding: 6px 12px; font-size: 12.5px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: #fff; color: var(--text);
+  }
+  .entry button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .entry button:disabled { opacity: 0.5; cursor: default; }
+
+  #list-status { font-size: 13px; color: var(--muted); }
+  #list-status.error { color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>Rufnummern sperren</h1>
+
+  <div class="card">
+    <div class="field">
+      <label for="number">Rufnummer</label>
+      <input id="number" type="tel" inputmode="tel" autocomplete="off"
+             placeholder="z. B. 07121123456">
+      <div class="hint">Bitte immer mit Vorwahl eingeben.</div>
+    </div>
+    <div class="field">
+      <label for="name">Bezeichnung (optional)</label>
+      <input id="name" type="text" autocomplete="off" maxlength="60"
+             placeholder="z. B. Werbeanrufe">
+    </div>
+    <button id="block-btn" type="button">Rufnummer sperren</button>
+    <div id="message"></div>
+  </div>
+
+  <div class="list-head">
+    <h2 id="list-title">Gesperrte Rufnummern</h2>
+    <button id="reload-btn" type="button">Aktualisieren</button>
+  </div>
+  <div id="list-status">Wird geladen …</div>
+  <div id="list"></div>
+</div>
+
+<script>
+const ENDPOINT = "https://cclcdhwnzkzciwjaclzt.supabase.co/functions/v1/fritzbox-sperrliste";
+const ACCESS_KEY = new URLSearchParams(location.search).get("key") || "";
+
+const numberInput = document.getElementById("number");
+const nameInput = document.getElementById("name");
+const blockBtn = document.getElementById("block-btn");
+const reloadBtn = document.getElementById("reload-btn");
+const message = document.getElementById("message");
+const listEl = document.getElementById("list");
+const listStatus = document.getElementById("list-status");
+const listTitle = document.getElementById("list-title");
+
+function showMessage(text, kind) {
+  message.textContent = text;
+  message.className = kind || "";
+}
+
+async function callApi(payload) {
+  const res = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-tool-key": ACCESS_KEY },
+    body: JSON.stringify(payload),
+  });
+  let data = {};
+  try { data = await res.json(); } catch (_) { /* leerer Body */ }
+  if (!res.ok) throw new Error(data.error || "Die Anfrage ist fehlgeschlagen (HTTP " + res.status + ").");
+  return data;
+}
+
+function renderList(entries) {
+  listEl.textContent = "";
+  listTitle.textContent = "Gesperrte Rufnummern (" + entries.length + ")";
+
+  if (!entries.length) {
+    listStatus.textContent = "Zurzeit ist keine Rufnummer gesperrt.";
+    listStatus.className = "";
+    return;
+  }
+  listStatus.textContent = "";
+  listStatus.className = "";
+
+  for (const entry of entries) {
+    const row = document.createElement("div");
+    row.className = "entry";
+
+    const info = document.createElement("div");
+    info.className = "info";
+    const number = document.createElement("div");
+    number.className = "number";
+    number.textContent = entry.number;
+    info.appendChild(number);
+    if (entry.name) {
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = entry.name;
+      info.appendChild(name);
+    }
+    row.appendChild(info);
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Entsperren";
+    btn.disabled = !entry.uid;
+    btn.addEventListener("click", () => unblock(entry, btn));
+    row.appendChild(btn);
+
+    listEl.appendChild(row);
+  }
+}
+
+async function loadList() {
+  reloadBtn.disabled = true;
+  listStatus.className = "";
+  if (!listEl.children.length) listStatus.textContent = "Wird geladen …";
+  try {
+    const data = await callApi({ action: "list" });
+    renderList(data.entries || []);
+  } catch (err) {
+    listEl.textContent = "";
+    listTitle.textContent = "Gesperrte Rufnummern";
+    listStatus.textContent = err.message;
+    listStatus.className = "error";
+  } finally {
+    reloadBtn.disabled = false;
+  }
+}
+
+async function block() {
+  const number = numberInput.value.trim();
+  if (!number) {
+    showMessage("Bitte eine Rufnummer eingeben.", "error");
+    numberInput.focus();
+    return;
+  }
+
+  blockBtn.disabled = true;
+  showMessage("Wird gesperrt …", "");
+  try {
+    const data = await callApi({
+      action: "block",
+      number: number,
+      name: nameInput.value.trim(),
+    });
+    showMessage("Die Rufnummer " + data.entry.number + " ist jetzt gesperrt.", "success");
+    numberInput.value = "";
+    nameInput.value = "";
+    await loadList();
+  } catch (err) {
+    showMessage(err.message, "error");
+  } finally {
+    blockBtn.disabled = false;
+  }
+}
+
+async function unblock(entry, btn) {
+  const label = entry.name ? entry.number + " (" + entry.name + ")" : entry.number;
+  if (!confirm("Sperre für " + label + " wirklich aufheben?")) return;
+
+  btn.disabled = true;
+  btn.textContent = "…";
+  try {
+    await callApi({ action: "unblock", uid: entry.uid });
+    showMessage("Die Sperre für " + entry.number + " wurde aufgehoben.", "success");
+    await loadList();
+  } catch (err) {
+    showMessage(err.message, "error");
+    btn.disabled = false;
+    btn.textContent = "Entsperren";
+  }
+}
+
+blockBtn.addEventListener("click", block);
+reloadBtn.addEventListener("click", loadList);
+numberInput.addEventListener("keydown", (e) => { if (e.key === "Enter") block(); });
+nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") block(); });
+
+if (!ACCESS_KEY) {
+  listStatus.textContent = "Dieses Tool wurde ohne Zugriffsschlüssel aufgerufen. " +
+    "Bitte die Adresse mit dem Parameter ?key=… verwenden.";
+  listStatus.className = "error";
+  blockBtn.disabled = true;
+  reloadBtn.disabled = true;
+} else {
+  loadList();
+}
+</script>
+</body>
+</html>
