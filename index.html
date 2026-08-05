@@ -15,14 +15,28 @@
   }
   * { box-sizing: border-box; }
   html, body {
+    height: 100%;
     margin: 0; padding: 0;
     font-family: -apple-system, "Segoe UI", Arial, sans-serif;
     color: var(--text);
     background: var(--bg);
   }
-  #app { max-width: 720px; margin: 0 auto; padding: 22px 20px 40px; }
-  h1 { font-size: 17px; margin: 0 0 14px; }
-  h2 { font-size: 15px; margin: 26px 0 10px; }
+
+  #app {
+    max-width: 980px; margin: 0 auto; padding: 22px 20px;
+    height: 100%;
+    display: flex; flex-direction: column;
+  }
+  h1 { flex: none; font-size: 17px; margin: 0 0 16px; }
+  h2 { font-size: 15px; margin: 0; }
+
+  /* Zwei Spalten; nur die rechte scrollt, die linke bleibt stehen. */
+  #columns {
+    flex: 1 1 auto; min-height: 0;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 22px;
+  }
+  .column { display: flex; flex-direction: column; min-height: 0; }
 
   .card {
     background: #fff; border: 1px solid var(--border); border-radius: 8px;
@@ -41,9 +55,7 @@
   .field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
-  button {
-    font-family: inherit; cursor: pointer;
-  }
+  button { font-family: inherit; cursor: pointer; }
   #block-btn {
     padding: 10px 18px; border: none; border-radius: 6px;
     background: var(--accent); color: #fff; font-size: 14px;
@@ -55,16 +67,20 @@
   #message.success { color: var(--ok); }
 
   .list-head {
+    flex: none;
     display: flex; align-items: baseline; justify-content: space-between;
-    margin: 26px 0 10px;
+    gap: 10px; margin-bottom: 10px;
   }
-  .list-head h2 { margin: 0; }
   #reload-btn {
     border: none; background: none; padding: 0;
     font-size: 13px; color: var(--accent); text-decoration: underline;
   }
   #reload-btn:disabled { color: var(--muted); cursor: default; }
 
+  #list-wrap {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    padding-right: 4px;
+  }
   #list { display: flex; flex-direction: column; gap: 8px; }
   .entry {
     background: #fff; border: 1px solid var(--border); border-radius: 8px;
@@ -90,34 +106,52 @@
 
   #list-status { font-size: 13px; color: var(--muted); }
   #list-status.error { color: var(--accent); }
+
+  /* Schmale Fenster: untereinander, dann scrollt wieder die ganze Seite. */
+  @media (max-width: 700px) {
+    html, body { height: auto; }
+    #app { height: auto; display: block; padding-bottom: 40px; }
+    #columns { display: block; }
+    .column + .column { margin-top: 26px; }
+    #list-wrap { overflow-y: visible; }
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <h1>Rufnummern sperren</h1>
 
-  <div class="card">
-    <div class="field">
-      <label for="number">Rufnummer</label>
-      <input id="number" type="tel" inputmode="tel" autocomplete="off"
-             placeholder="z. B. 07121123456">
-      <div class="hint">Bitte immer mit Vorwahl eingeben.</div>
+  <div id="columns">
+    <div class="column">
+      <div class="list-head"><h2>Neue Sperre</h2></div>
+      <div class="card">
+        <div class="field">
+          <label for="number">Rufnummer</label>
+          <input id="number" type="tel" inputmode="tel" autocomplete="off"
+                 placeholder="z. B. 07121123456">
+          <div class="hint">Bitte immer mit Vorwahl eingeben.</div>
+        </div>
+        <div class="field">
+          <label for="name">Bezeichnung (optional)</label>
+          <input id="name" type="text" autocomplete="off" maxlength="60"
+                 placeholder="z. B. Werbeanrufe">
+        </div>
+        <button id="block-btn" type="button">Rufnummer sperren</button>
+        <div id="message"></div>
+      </div>
     </div>
-    <div class="field">
-      <label for="name">Bezeichnung (optional)</label>
-      <input id="name" type="text" autocomplete="off" maxlength="60"
-             placeholder="z. B. Werbeanrufe">
-    </div>
-    <button id="block-btn" type="button">Rufnummer sperren</button>
-    <div id="message"></div>
-  </div>
 
-  <div class="list-head">
-    <h2 id="list-title">Gesperrte Rufnummern</h2>
-    <button id="reload-btn" type="button">Aktualisieren</button>
+    <div class="column">
+      <div class="list-head">
+        <h2 id="list-title">Gesperrte Rufnummern</h2>
+        <button id="reload-btn" type="button">Aktualisieren</button>
+      </div>
+      <div id="list-wrap">
+        <div id="list-status">Wird geladen …</div>
+        <div id="list"></div>
+      </div>
+    </div>
   </div>
-  <div id="list-status">Wird geladen …</div>
-  <div id="list"></div>
 </div>
 
 <script>
